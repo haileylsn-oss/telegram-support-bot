@@ -1,21 +1,19 @@
-const { Telegraf, Markup, session } = require("telegraf");
-require("dotenv").config();
+import { Telegraf, Markup, session } from "telegraf";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_ID = Number(process.env.ADMIN_CHAT_ID);
 
+// ⏱ Session timeout (5 minutes)
+const SESSION_TIMEOUT = 5 * 60 * 1000;
+
 bot.use(session());
-
-const SESSION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-
-/* ---------------- GENERATE RANDOM TICKET ID ---------------- */
-function generateTicketId() {
-  return "TICKET-" + Math.floor(100000 + Math.random() * 900000);
-}
 
 /* ---------------- START COMMAND ---------------- */
 bot.start((ctx) => {
-  ctx.session = null;
+  ctx.session = null; // reset session on /start
 
   ctx.reply(
     `👋 Hi ${ctx.from.first_name}, thanks for reaching out!\n\n` +
@@ -30,136 +28,41 @@ bot.start((ctx) => {
   );
 });
 
-/* ---------------- BACK TO MAIN ---------------- */
-bot.action("back_main", async (ctx) => {
-  await ctx.answerCbQuery();
-  ctx.session = null;
-
-  ctx.reply(
-    `Main Menu`,
-    Markup.inlineKeyboard([
-      [Markup.button.callback("Technical Support 🛠️", "support")],
-      [Markup.button.callback("Partnership Request 🤝", "partnership")],
-      [Markup.button.callback("Something Else ❓", "other")],
-    ])
-  );
-});
-
-/* ---------------- TECHNICAL SUPPORT ---------------- */
-bot.action("support", async (ctx) => {
+/* ---------------- BUTTON HANDLERS ---------------- */
+bot.action(["support", "partnership", "other"], async (ctx) => {
   await ctx.answerCbQuery();
 
-  if (ctx.session && ctx.session.ticketOpen) {
-    return ctx.reply(
-      `⚠️ You already have an open ticket.\n\n🎫 ${ctx.session.ticketId}`,
-      Markup.inlineKeyboard([
-        [Markup.button.callback("🔒 Close Ticket", "close_ticket")],
-      ])
-    );
+  let category = "";
+  let question = "";
+
+  if (ctx.callbackQuery.data === "support") {
+    category = "Technical Support";
+    question =
+      "🛠️ Please describe the technical issue you are facing.\n\nInclude error messages, screenshots, or steps if possible.";
   }
 
-  ctx.reply(
-    `You have selected Technical Support 🛠️\n\nSelect issue type below:`,
-    Markup.inlineKeyboard([
-      [Markup.button.callback("🐞 Bug Report", "bug")],
-      [Markup.button.callback("💳 Transaction Query", "transaction")],
-      [Markup.button.callback("⚠️ Glitch Error", "glitch")],
-      [Markup.button.callback("🛠 Other Technical Report", "other_issue")],
-      [Markup.button.callback("⬅ Back", "back_main")],
-    ])
-  );
-});
-
-/* ---------------- CREATE TICKET ---------------- */
-bot.action(["bug", "transaction", "glitch", "other_issue"], async (ctx) => {
-  await ctx.answerCbQuery();
-
-  const categories = {
-    bug: "Bug Report",
-    transaction: "Transaction Query",
-    glitch: "Glitch Error",
-    other_issue: "Other Technical Report",
-  };
-
-  const ticketId = generateTicketId();
-
-  ctx.session = {
-    ticketOpen: true,
-    ticketId: ticketId,
-    category: categories[ctx.callbackQuery.data],
-    startedAt: Date.now(),
-  };
-
-  ctx.reply(
-    `✅ Ticket Opened Successfully!\n\n` +
-      `🎫 Ticket ID: ${ticketId}\n` +
-      `📂 Category: ${ctx.session.category}\n\n` +
-      `Please describe your issue in detail.`,
-    Markup.inlineKeyboard([
-      [Markup.button.callback("🔒 Close Ticket", "close_ticket")],
-    ])
-  );
-});
-
-/* ---------------- CLOSE TICKET ---------------- */
-bot.action("close_ticket", async (ctx) => {
-  await ctx.answerCbQuery();
-
-  if (!ctx.session || !ctx.session.ticketOpen) {
-    return ctx.reply("❌ No active ticket.");
+  if (ctx.callbackQuery.data === "partnership") {
+    category = "Partnership Request";
+    question =
+      "🤝 Please explain your partnership idea and how you would like to collaborate.";
   }
 
-  const ticketId = ctx.session.ticketId;
-  ctx.session = null;
-
-  ctx.reply(
-    `🔒 Ticket ${ticketId} has been closed.\n\nType /start to open a new ticket.`
-  );
-});
-
-/* ---------------- PARTNERSHIP ---------------- */
-bot.action("partnership", async (ctx) => {
-  await ctx.answerCbQuery();
-
-  const ticketId = generateTicketId();
+  if (ctx.callbackQuery.data === "other") {
+    category = "Something Else";
+    question = "❓ Please explain your request in detail.";
+  }
 
   ctx.session = {
-    ticketOpen: true,
-    ticketId: ticketId,
-    category: "Partnership Request",
+    category,
     startedAt: Date.now(),
   };
 
-  ctx.reply(
-    `🤝 Partnership Ticket Created\n\n🎫 Ticket ID: ${ticketId}\n\nPlease describe your proposal.`,
-    Markup.inlineKeyboard([
-      [Markup.button.callback("🔒 Close Ticket", "close_ticket")],
-    ])
-  );
+  await ctx.reply(`✅ *${category} selected*\n\n${question}`, {
+    parse_mode: "Markdown",
+  });
 });
 
-/* ---------------- OTHER ---------------- */
-bot.action("other", async (ctx) => {
-  await ctx.answerCbQuery();
-
-  const ticketId = generateTicketId();
-
-  ctx.session = {
-    ticketOpen: true,
-    ticketId: ticketId,
-    category: "General Inquiry",
-    startedAt: Date.now(),
-  };
-
-  ctx.reply(
-    `❓ General Ticket Created\n\n🎫 Ticket ID: ${ticketId}\n\nPlease explain your request.`,
-    Markup.inlineKeyboard([
-      [Markup.button.callback("🔒 Close Ticket", "close_ticket")],
-    ])
-  );
-});
-
-/* ---------------- MESSAGE HANDLER ---------------- */
+/* ---------------- TEXT HANDLER ---------------- */
 bot.on("text", async (ctx) => {
   const user = ctx.from;
 
@@ -167,57 +70,73 @@ bot.on("text", async (ctx) => {
   if (user.id === ADMIN_ID) {
     const replyTo = ctx.message.reply_to_message;
 
-    if (!replyTo || !replyTo.text) {
-      return ctx.reply("Reply to a user ticket message.");
+    if (!replyTo?.text) {
+      return ctx.reply("❌ Please reply to a user message.");
     }
 
     const match = replyTo.text.match(/USERID-(\d+)/);
-    if (!match) return ctx.reply("User ID not found.");
+    if (!match) {
+      return ctx.reply("❌ Could not find USER ID.");
+    }
 
     const userId = Number(match[1]);
 
     try {
       await bot.telegram.sendMessage(
         userId,
-        `💬 Support Reply\n\n${ctx.message.text}`
+        `💬 *Support Reply*\n\n${ctx.message.text}`,
+        { parse_mode: "Markdown" }
       );
 
-      ctx.reply("✅ Reply sent.");
+      await ctx.reply(`✅ Reply sent to user ${userId}`);
     } catch (err) {
-      ctx.reply("❌ Failed to send.");
+      console.error(err);
+      await ctx.reply("❌ Failed to send reply. User may not have started the bot.");
     }
 
     return;
   }
 
   /* ---------- USER MESSAGE ---------- */
-  if (!ctx.session || !ctx.session.ticketOpen) {
-    return ctx.reply("⚠️ Please type /start and open a ticket first.");
+  const sessionData = ctx.session;
+
+  // ❌ No active session
+  if (!sessionData?.category) {
+    return ctx.reply("⚠️ Please type /start and select an option first.");
   }
 
-  if (Date.now() - ctx.session.startedAt > SESSION_TIMEOUT) {
+  // ⏰ Session expired
+  if (Date.now() - sessionData.startedAt > SESSION_TIMEOUT) {
     ctx.session = null;
-    return ctx.reply("⏰ Session expired. Please type /start again.");
+    return ctx.reply(
+      "⏰ Your session has expired.\n\nPlease type /start to begin again."
+    );
   }
+
+  const message = ctx.message.text;
 
   try {
     await bot.telegram.sendMessage(
       ADMIN_ID,
-      `📩 New Ticket Message\n\n` +
-        `🎫 Ticket ID: ${ctx.session.ticketId}\n` +
-        `👤 ${user.first_name} (@${user.username || "no_username"})\n` +
+      `📩 *New Support Message*\n\n` +
+        `👤 User: ${user.first_name} (@${user.username || "no_username"})\n` +
         `🆔 USERID-${user.id}\n` +
-        `📂 ${ctx.session.category}\n\n` +
-        `💬 ${ctx.message.text}\n\n` +
-        `Reply to respond`
+        `📂 Category: ${sessionData.category}\n\n` +
+        `💬 Message:\n${message}\n\n` +
+        `✍️ Reply to this message to respond`,
+      { parse_mode: "Markdown" }
     );
 
-    ctx.reply("✅ Message sent to support.");
+    await ctx.reply("✅ Message received! Support will reply soon.");
+
+    // 🔄 force restart after one message
+    ctx.session = null;
   } catch (err) {
-    ctx.reply("❌ Failed to send message.");
+    console.error(err);
+    await ctx.reply("❌ Failed to send your message. Try again later.");
   }
 });
 
-/* ---------------- LAUNCH ---------------- */
+/* ---------------- LAUNCH BOT ---------------- */
 bot.launch();
-console.log("🎫 Ticket Support Bot Running...");
+console.log("🤖 Support bot is running...");  
